@@ -1,10 +1,13 @@
-import { APIGatewayProxyHandler, APIGatewayProxyEvent, APIGatewayProxyWebsocketEventV2, APIGatewayProxyResult, APIGatewayProxyResultV2 } from 'aws-lambda';
-import { DynamoDB, ScanCommandInput, PutItemCommandInput, DeleteItemCommandInput, UpdateItemCommandInput } from '@aws-sdk/client-dynamodb';
+import { APIGatewayProxyHandler, APIGatewayProxyEvent, APIGatewayProxyWebsocketEventV2, APIGatewayProxyResult } from 'aws-lambda';
+import { DynamoDB } from '@aws-sdk/client-dynamodb';
+import { DeleteCommandInput, DynamoDBDocument, PutCommandInput, ScanCommandInput, UpdateCommandInput } from '@aws-sdk/lib-dynamodb';
 import { HomeWSSendNotificationRequest } from '../models/HomeWSUpdateRequest';
 import { HomeWSConnection } from '../models/HomeWSConnection';
 import { HomeWSSendNotificationMessage, HomeWSSubscribeMessage } from '../models/HomeWSMessages';
 import axios from 'axios';
+
 const dynamo = new DynamoDB({});
+const dynamoClient = DynamoDBDocument.from(dynamo);
 const region = 'us-east-1';
 const WSApiUrl = process.env.WS_API_URL + '/dev/@connections/';
 
@@ -35,13 +38,19 @@ async function handleHttpEvent(event: APIGatewayProxyEvent): Promise<APIGatewayP
 					'#subscriptions': 'subscriptions'
 				},
 				ExpressionAttributeValues: {
-					':subscriptionType': { S: body.subscriptionType }
+					':subscriptionType': body.subscriptionType
 				}
 			};
-			const queryResult = await dynamo.scan(params);
+			const queryResult = await dynamoClient.scan(params);
+			console.log('query result');
+			console.log(queryResult.Items);
 			const connections = queryResult.Items as unknown as HomeWSConnection[];
 
+			console.log('connections');
+			console.log(JSON.stringify(connections));
 			connections.forEach(conn => {
+				console.log(conn.connectionId);
+				console.log(conn.subscriptions);
 				sendNotificationToConnection(conn, body);
 			});
 		}
@@ -66,11 +75,11 @@ async function handleWebsocketEvent(event: APIGatewayProxyWebsocketEventV2): Pro
 	switch (event.requestContext.eventType) {
 		case 'CONNECT': {
 			// save connection to db
-			const params: PutItemCommandInput = {
+			const params: PutCommandInput = {
 				TableName: 'HomeWSConnections',
 				Item: {
-					connectionId: { S: event.requestContext.connectionId },
-					subscriptions: { SS: [] }
+					connectionId: event.requestContext.connectionId,
+					subscriptions: []
 				}
 			};
 			try {
@@ -82,10 +91,10 @@ async function handleWebsocketEvent(event: APIGatewayProxyWebsocketEventV2): Pro
 		}
 		case 'DISCONNECT': {
 			// remove connection from db
-			const params: DeleteItemCommandInput = {
+			const params: DeleteCommandInput = {
 				TableName: 'HomeWSConnections',
 				Key: {
-					connectionId: { S: event.requestContext.connectionId }
+					connectionId: event.requestContext.connectionId
 				}
 			};
 			try {
@@ -103,16 +112,17 @@ async function handleWebsocketEvent(event: APIGatewayProxyWebsocketEventV2): Pro
 			}
 			const body: HomeWSSubscribeMessage = JSON.parse(event.body);
 			const updateExpression = body.value === 'subscribe' ? 'add subscriptions :subs' : 'delete subscriptions :subs';
-			const params: UpdateItemCommandInput = {
+			const params: UpdateCommandInput = {
 				TableName: 'HomeWSConnections',
 				UpdateExpression: updateExpression,
 				Key: {
-					connectionId: { S: event.requestContext.connectionId }
+					connectionId: event.requestContext.connectionId
 				},
 				ExpressionAttributeValues: {
-					':subs': { 'SS': [body.subscriptionType] }
+					':subs': [body.subscriptionType]
 				}
 			};
+
 			try {
 				res = await dynamo.updateItem(params);
 			} catch(e) {
@@ -138,10 +148,15 @@ async function handleWebsocketEvent(event: APIGatewayProxyWebsocketEventV2): Pro
 }
 
 async function sendNotificationToConnection(conn: HomeWSConnection, body: HomeWSSendNotificationRequest) {
+	console.log('sending notifications to connections');
 	const requestBody: HomeWSSendNotificationMessage = { subscriptionType: body.subscriptionType, value: body.value };
+	console.log('request body');
+	console.log(requestBody);
+	const wsUrl = WSApiUrl + conn.connectionId;
+	console.log('websocket connections url', wsUrl);
 	let res;
 	try {
-		res = await axios.post(WSApiUrl + conn.connectionId, requestBody);
+		res = await axios.post(wsUrl, requestBody);
 		console.log(res);
 	} catch(e) {
 		console.error(`Error sending message to connection [${conn.connectionId}]`);
