@@ -168,7 +168,7 @@ function sendNotificationToConnection(conn: HomeWSConnection, body: HomeWSSendNo
 	console.log('websocket connections url', wsUrl);
 	const command = new PostToConnectionCommand({
 		ConnectionId: conn.connectionId,
-		Data: Uint8Array.from(JSON.stringify(requestBody) as any)
+		Data: JSON.stringify(requestBody) as any
 	});
 	let res;
 	try {
