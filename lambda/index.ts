@@ -4,12 +4,16 @@ import { DeleteCommandInput, DynamoDBDocument, PutCommandInput, ScanCommandInput
 import { HomeWSSendNotificationRequest } from '../models/HomeWSUpdateRequest';
 import { HomeWSConnection } from '../models/HomeWSConnection';
 import { HomeWSSendNotificationMessage, HomeWSSubscribeMessage } from '../models/HomeWSMessages';
-import axios from 'axios';
+import {
+	ApiGatewayManagementApiClient,
+	PostToConnectionCommand,
+	PostToConnectionCommandOutput,
+} from '@aws-sdk/client-apigatewaymanagementapi';
 
-const dynamo = new DynamoDB({});
-const dynamoClient = DynamoDBDocument.from(dynamo);
+const dynamoClient = DynamoDBDocument.from(new DynamoDB({}));
 const region = 'us-east-1';
-const WSApiUrl = process.env.WS_API_URL + '/dev/@connections/';
+const WSApiUrl = process.env.WS_API_URL;
+const wsManagementClient = new ApiGatewayManagementApiClient({ endpoint: WSApiUrl });
 
 export const handler: APIGatewayProxyHandler = async (event, context) => {
 	console.log('Received event:', JSON.stringify(event, null, 2));
@@ -26,6 +30,7 @@ export const handler: APIGatewayProxyHandler = async (event, context) => {
 };
 
 async function handleHttpEvent(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
+	let results: Array<any> = [];
 	if (event.resource === '/sendnotification') {
 		// get all connections that have a recipient type matching the one in the body
 		const body = JSON.parse(event.body || '') as HomeWSSendNotificationRequest;
@@ -48,20 +53,27 @@ async function handleHttpEvent(event: APIGatewayProxyEvent): Promise<APIGatewayP
 
 			console.log('connections');
 			console.log(JSON.stringify(connections));
-			connections.forEach(conn => {
+			const requests: Array<Promise<any>> = [];
+			connections.forEach(async (conn) => {
 				console.log(conn.connectionId);
 				console.log(conn.subscriptions);
-				sendNotificationToConnection(conn, body);
+				requests.push(sendNotificationToConnection(conn, body));
 			});
+
+			results = await Promise.allSettled(requests);
+			console.log('results:');
+			console.log(results);
 		}
 	}
 	
-	const responseBody = 'testing';
+	const responseBody = 'sent a message to connections: ' + JSON.stringify(results);
 	const statusCode = 200;
 	const headers = {
 		'Content-Type': 'application/json',
 		'Access-Control-Allow-Origin' : '*'
 	};
+
+	console.log('sending final result of handler');
 
 	return {
 		statusCode,
@@ -79,11 +91,11 @@ async function handleWebsocketEvent(event: APIGatewayProxyWebsocketEventV2): Pro
 				TableName: 'HomeWSConnections',
 				Item: {
 					connectionId: event.requestContext.connectionId,
-					subscriptions: []
+					subscriptions: new Set<string>(['allUsers'])
 				}
 			};
 			try {
-				res = await dynamo.putItem(params);
+				res = await dynamoClient.put(params);
 			} catch(e) {
 				console.error('Error saving new connection to DynamoDB', e);
 			}
@@ -98,7 +110,7 @@ async function handleWebsocketEvent(event: APIGatewayProxyWebsocketEventV2): Pro
 				}
 			};
 			try {
-				res = await dynamo.deleteItem(params);
+				res = await dynamoClient.delete(params);
 			} catch(e) {
 				console.error('Error deleting connection from DynamoDB', e);
 			}
@@ -119,12 +131,12 @@ async function handleWebsocketEvent(event: APIGatewayProxyWebsocketEventV2): Pro
 					connectionId: event.requestContext.connectionId
 				},
 				ExpressionAttributeValues: {
-					':subs': [body.subscriptionType]
+					':subs': new Set([body.subscriptionType])
 				}
 			};
 
 			try {
-				res = await dynamo.updateItem(params);
+				res = await dynamoClient.update(params);
 			} catch(e) {
 				console.error('Error updating subscriptions', event);
 				console.error(e);
@@ -147,30 +159,29 @@ async function handleWebsocketEvent(event: APIGatewayProxyWebsocketEventV2): Pro
 	};
 }
 
-async function sendNotificationToConnection(conn: HomeWSConnection, body: HomeWSSendNotificationRequest) {
+function sendNotificationToConnection(conn: HomeWSConnection, body: HomeWSSendNotificationRequest): Promise<PostToConnectionCommandOutput> {
 	console.log('sending notifications to connections');
 	const requestBody: HomeWSSendNotificationMessage = { subscriptionType: body.subscriptionType, value: body.value };
 	console.log('request body');
 	console.log(requestBody);
 	const wsUrl = WSApiUrl + conn.connectionId;
 	console.log('websocket connections url', wsUrl);
+	const command = new PostToConnectionCommand({
+		ConnectionId: conn.connectionId,
+		Data: Uint8Array.from(JSON.stringify(requestBody) as any)
+	});
 	let res;
 	try {
-		res = await axios.post(wsUrl, requestBody);
+		console.log('posting notification');
+		res = wsManagementClient.send(command);
+		console.log('notification sent');
 		console.log(res);
 	} catch(e) {
 		console.error(`Error sending message to connection [${conn.connectionId}]`);
 	}
-	const responseBody = res ? res.data : '';
-	const statusCode = res ? res.status : 500;
-	const headers = {
-		'Content-Type': 'application/json',
-		'Access-Control-Allow-Origin' : '*'
-	};
-	
-	return {
-		statusCode,
-		responseBody,
-		headers,
-	};
+
+	if (res) {
+		return res;
+	}
+	return new Promise(() => { return true; });
 }
