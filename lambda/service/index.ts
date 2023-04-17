@@ -1,14 +1,10 @@
 import { APIGatewayProxyHandler, APIGatewayProxyEvent, APIGatewayProxyWebsocketEventV2, APIGatewayProxyResult } from 'aws-lambda';
 import { DynamoDB } from '@aws-sdk/client-dynamodb';
 import { DeleteCommandInput, DynamoDBDocument, PutCommandInput, ScanCommandInput, UpdateCommandInput } from '@aws-sdk/lib-dynamodb';
-import { HomeWSSendNotificationRequest } from '../models/HomeWSUpdateRequest';
-import { HomeWSConnection } from '../models/HomeWSConnection';
-import { HomeWSSendNotificationMessage, HomeWSSubscribeMessage } from '../models/HomeWSMessages';
-import {
-	ApiGatewayManagementApiClient,
-	PostToConnectionCommand,
-	PostToConnectionCommandOutput,
-} from '@aws-sdk/client-apigatewaymanagementapi';
+import { HomeWSSendNotificationRequest } from '../../models/HomeWSUpdateRequest';
+import { HomeWSConnection } from '../../models/HomeWSConnection';
+import { HomeWSSendNotificationMessage, HomeWSSubscribeMessage } from '../../models/HomeWSMessages';
+import { ApiGatewayManagementApiClient, PostToConnectionCommand, PostToConnectionCommandOutput } from '@aws-sdk/client-apigatewaymanagementapi';
 
 const dynamoClient = DynamoDBDocument.from(new DynamoDB({}));
 const region = 'us-east-1';

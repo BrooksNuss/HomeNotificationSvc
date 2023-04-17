@@ -5,4 +5,4 @@ export interface HomeWSSendNotificationRequest {
 }
 
 export type HomeWSActionType = 'sendNotification';
-export type HomeWSSubscriptionType = 'feederUpdate';
+export type HomeWSSubscriptionType = 'feederUpdate' | 'global';
