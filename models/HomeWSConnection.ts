@@ -1,4 +1,4 @@
-import { HomeWSSubscriptionType } from './HomeWSUpdateRequest';
+import { HomeWSSubscriptionType } from './HomeWSMessages';
 
 export interface HomeWSConnection {
 	connectionId: string,

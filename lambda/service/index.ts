@@ -1,9 +1,8 @@
 import { APIGatewayProxyHandler, APIGatewayProxyEvent, APIGatewayProxyWebsocketEventV2, APIGatewayProxyResult } from 'aws-lambda';
 import { DynamoDB } from '@aws-sdk/client-dynamodb';
 import { DeleteCommandInput, DynamoDBDocument, PutCommandInput, ScanCommandInput, UpdateCommandInput } from '@aws-sdk/lib-dynamodb';
-import { HomeWSSendNotificationRequest } from '../../models/HomeWSUpdateRequest';
 import { HomeWSConnection } from '../../models/HomeWSConnection';
-import { HomeWSSendNotificationMessage, HomeWSSubscribeMessage } from '../../models/HomeWSMessages';
+import { HomeWSListenerSendNotificationRequest, HomeWSSubscribeMessage } from '../../models/HomeWSMessages';
 import { ApiGatewayManagementApiClient, PostToConnectionCommand, PostToConnectionCommandOutput } from '@aws-sdk/client-apigatewaymanagementapi';
 
 const dynamoClient = DynamoDBDocument.from(new DynamoDB({}));
@@ -29,7 +28,7 @@ async function handleHttpEvent(event: APIGatewayProxyEvent): Promise<APIGatewayP
 	let results: Array<any> = [];
 	if (event.resource === '/sendnotification') {
 		// get all connections that have a recipient type matching the one in the body
-		const body = JSON.parse(event.body || '') as HomeWSSendNotificationRequest;
+		const body = JSON.parse(event.body || '') as HomeWSListenerSendNotificationRequest;
 		if (body) {
 			// get dynamo items
 			const params: ScanCommandInput = {
@@ -155,16 +154,15 @@ async function handleWebsocketEvent(event: APIGatewayProxyWebsocketEventV2): Pro
 	};
 }
 
-function sendNotificationToConnection(conn: HomeWSConnection, body: HomeWSSendNotificationRequest): Promise<PostToConnectionCommandOutput> {
+function sendNotificationToConnection(conn: HomeWSConnection, body: HomeWSListenerSendNotificationRequest): Promise<PostToConnectionCommandOutput> {
 	console.log('sending notifications to connections');
-	const requestBody: HomeWSSendNotificationMessage = { subscriptionType: body.subscriptionType, value: body.value };
 	console.log('request body');
-	console.log(requestBody);
+	console.log(body);
 	const wsUrl = WSApiUrl + conn.connectionId;
 	console.log('websocket connections url', wsUrl);
 	const command = new PostToConnectionCommand({
 		ConnectionId: conn.connectionId,
-		Data: JSON.stringify(requestBody) as any
+		Data: JSON.stringify(body) as any
 	});
 	let res;
 	try {
